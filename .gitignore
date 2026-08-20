@@ -1,0 +1,5 @@
+/formula-bridge
+/bin/
+*.exe
+*.test
+*.out
