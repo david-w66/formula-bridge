@@ -45,8 +45,6 @@ rewritten.
 
 ## What it doesn't handle yet
 
-- Sheet names with spaces need single quotes (`'My Sheet'!A1`) and aren't
-  fully round-tripped yet.
 - No function-name translation (a handful of functions are spelled
   differently between the two apps).
 - Range references that span sheets (`Sheet1:Sheet3!A1`) aren't converted.

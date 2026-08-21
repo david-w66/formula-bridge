@@ -43,7 +43,9 @@ var sheetRefCalc = regexp.MustCompile(`('[^']+'|[A-Za-z_][A-Za-z0-9_]*)\.(\$?[A-
 // the two differences that break most formulas on import: the argument
 // separator (comma in Excel, semicolon in Calc) and the sheet-reference
 // joiner (! in Excel, . in Calc). Both are rewritten only outside of quoted
-// string literals so that text arguments are left untouched.
+// string literals and quoted sheet names, so text arguments and sheet names
+// that happen to contain a comma or semicolon (both are legal in a sheet
+// name) are left untouched.
 func Convert(formula string, from, to Dialect) (string, error) {
 	if from == to {
 		return formula, nil
@@ -63,18 +65,30 @@ func Convert(formula string, from, to Dialect) (string, error) {
 }
 
 // replaceOutsideStrings swaps every occurrence of old with new, except for
-// occurrences that fall inside a double-quoted string literal. Both Excel
-// and Calc use " to delimit text.
+// occurrences that fall inside a double-quoted string literal or a
+// single-quoted sheet name. Both Excel and Calc use " to delimit text and '
+// to quote a sheet name that contains spaces or other punctuation, and a
+// sheet name is free to contain a comma or semicolon, so those need the same
+// protection as text literals do. A literal apostrophe inside a sheet name
+// is written as a doubled '', which this treats as closing and immediately
+// reopening the quote - harmless, since there's nothing between them to
+// swap.
 func replaceOutsideStrings(formula string, old, new rune) string {
 	var b strings.Builder
 	inString := false
+	inSheetName := false
 	for _, r := range formula {
-		if r == '"' {
+		switch {
+		case r == '"' && !inSheetName:
 			inString = !inString
 			b.WriteRune(r)
 			continue
+		case r == '\'' && !inString:
+			inSheetName = !inSheetName
+			b.WriteRune(r)
+			continue
 		}
-		if r == old && !inString {
+		if r == old && !inString && !inSheetName {
 			b.WriteRune(new)
 			continue
 		}
