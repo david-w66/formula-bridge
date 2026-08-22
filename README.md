@@ -28,8 +28,8 @@ Or pipe formulas in on stdin, which is the main way this is meant to be used
 (e.g. as a filter in an export/import pipeline):
 
 ```
-$ echo '=VLOOKUP(A1,Sheet2!A:B,2,FALSE)' | formula-bridge -from excel -to calc
-=VLOOKUP(A1;Sheet2.A:B;2;FALSE())
+$ echo '=IF(STDEV.S(A1:A10)>0,TRUE,FALSE)' | formula-bridge -from excel -to calc
+=IF(STDEV(A1:A10)>0;TRUE();FALSE())
 ```
 
 Going the other direction:
@@ -45,8 +45,11 @@ rewritten.
 
 ## What it doesn't handle yet
 
-- No function-name translation (a handful of functions are spelled
-  differently between the two apps).
+- Function-name translation only covers a fixed table of same-signature
+  renames (mostly the Excel 2010 statistical functions and their older Calc
+  equivalents, plus Excel's bare `TRUE`/`FALSE`). Functions whose argument
+  list also changed between the two apps aren't touched, since guessing at
+  an argument reorder is worse than leaving the formula alone.
 - Range references that span sheets (`Sheet1:Sheet3!A1`) aren't converted.
 
 See the roadmap in the repo for what's planned next.
