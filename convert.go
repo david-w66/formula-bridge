@@ -39,6 +39,21 @@ var sheetRefExcel = regexp.MustCompile(`('[^']+'|[A-Za-z_][A-Za-z0-9_]*)!(\$?[A-
 // underscore keeps this from matching plain decimal numbers like 12.5.
 var sheetRefCalc = regexp.MustCompile(`('[^']+'|[A-Za-z_][A-Za-z0-9_]*)\.(\$?[A-Za-z]{1,3}\$?[0-9]+)`)
 
+// sheetRangeExcel matches an Excel 3-D reference, where a range of sheets
+// (Sheet1:Sheet3) is followed by a single cell reference or cell range that
+// applies to the same cells on every sheet in between, e.g. Sheet1:Sheet3!A1
+// or Sheet1:Sheet3!A1:B2. This has to be matched and rewritten before
+// sheetRefExcel gets a chance to run, since sheetRefExcel would otherwise
+// match just the "Sheet3!A1" tail and leave the leading "Sheet1:" behind.
+var sheetRangeExcel = regexp.MustCompile(`('[^']+'|[A-Za-z_][A-Za-z0-9_]*):('[^']+'|[A-Za-z_][A-Za-z0-9_]*)!(\$?[A-Za-z]{1,3}\$?[0-9]+)(?::(\$?[A-Za-z]{1,3}\$?[0-9]+))?`)
+
+// sheetRangeCalc matches the Calc equivalent of a 3-D reference: the start
+// sheet dotted to the start cell, a colon, then the end sheet dotted to the
+// end cell, e.g. Sheet1.A1:Sheet3.A1 or Sheet1.A1:Sheet3.B2. Like
+// sheetRangeExcel, this has to be matched before sheetRefCalc, which would
+// otherwise treat the two halves as two unrelated single-sheet references.
+var sheetRangeCalc = regexp.MustCompile(`('[^']+'|[A-Za-z_][A-Za-z0-9_]*)\.(\$?[A-Za-z]{1,3}\$?[0-9]+):('[^']+'|[A-Za-z_][A-Za-z0-9_]*)\.(\$?[A-Za-z]{1,3}\$?[0-9]+)`)
+
 // functionRenamesExcelToCalc maps Excel function names to their Calc
 // equivalent, for the small set of functions that were renamed at some
 // point (mostly the Excel 2010 statistical functions that grew a dotted
@@ -137,10 +152,40 @@ func addBooleanParens(s string) string {
 	return b.String()
 }
 
+// rewriteSheetRangeExcelToCalc converts every Excel 3-D reference in s to
+// Calc's per-sheet-dotted form. A bare trailing cell reference (no second
+// cell after a colon) applies to that same cell on both boundary sheets.
+func rewriteSheetRangeExcelToCalc(s string) string {
+	return sheetRangeExcel.ReplaceAllStringFunc(s, func(m string) string {
+		g := sheetRangeExcel.FindStringSubmatch(m)
+		startSheet, endSheet, startCell, endCell := g[1], g[2], g[3], g[4]
+		if endCell == "" {
+			endCell = startCell
+		}
+		return startSheet + "." + startCell + ":" + endSheet + "." + endCell
+	})
+}
+
+// rewriteSheetRangeCalcToExcel converts every Calc 3-D reference in s to
+// Excel's sheet-range-then-cell form. When the start and end cell are the
+// same, the cell is written once, matching how Excel itself writes a 3-D
+// reference to a single cell.
+func rewriteSheetRangeCalcToExcel(s string) string {
+	return sheetRangeCalc.ReplaceAllStringFunc(s, func(m string) string {
+		g := sheetRangeCalc.FindStringSubmatch(m)
+		startSheet, startCell, endSheet, endCell := g[1], g[2], g[3], g[4]
+		if startCell == endCell {
+			return startSheet + ":" + endSheet + "!" + startCell
+		}
+		return startSheet + ":" + endSheet + "!" + startCell + ":" + endCell
+	})
+}
+
 // Convert rewrites a single formula from one dialect to another. It handles
 // the differences that break most formulas on import: the argument
 // separator (comma in Excel, semicolon in Calc), the sheet-reference joiner
-// (! in Excel, . in Calc), a handful of renamed functions, and Excel's bare
+// (! in Excel, . in Calc) including cross-sheet range references like
+// Sheet1:Sheet3!A1, a handful of renamed functions, and Excel's bare
 // TRUE/FALSE constants. All of these are rewritten only outside of quoted
 // string literals and quoted sheet names, so text arguments and sheet names
 // that happen to contain a comma, semicolon, or the word TRUE are left
@@ -152,6 +197,7 @@ func Convert(formula string, from, to Dialect) (string, error) {
 	switch {
 	case from == Excel && to == Calc:
 		out := replaceOutsideStrings(formula, ',', ';')
+		out = rewriteSheetRangeExcelToCalc(out)
 		out = sheetRefExcel.ReplaceAllString(out, "$1.$2")
 		out = rewriteOutsideStrings(out, func(s string) string {
 			return addBooleanParens(renameFunctions(s, functionRenamesExcelToCalc))
@@ -159,6 +205,7 @@ func Convert(formula string, from, to Dialect) (string, error) {
 		return out, nil
 	case from == Calc && to == Excel:
 		out := replaceOutsideStrings(formula, ';', ',')
+		out = rewriteSheetRangeCalcToExcel(out)
 		out = sheetRefCalc.ReplaceAllString(out, "$1!$2")
 		out = rewriteOutsideStrings(out, func(s string) string {
 			return renameFunctions(s, functionRenamesCalcToExcel)

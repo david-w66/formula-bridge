@@ -39,6 +39,16 @@ $ echo '=SUM(Sheet1.A1;Sheet1.A2)' | formula-bridge -from calc -to excel
 =SUM(Sheet1!A1,Sheet1!A2)
 ```
 
+References that span a range of sheets (a 3-D reference) are also converted,
+even though the two dialects structure them differently - Excel keeps the
+sheet range together and appends the cell once, while Calc dots each
+boundary sheet to its own cell:
+
+```
+$ echo '=SUM(Sheet1:Sheet3!A1)' | formula-bridge -from excel -to calc
+=SUM(Sheet1.A1:Sheet3.A1)
+```
+
 Lines that don't start with `=` are passed through unchanged, so you can run
 a whole exported CSV column through the tool and only the formulas get
 rewritten.
@@ -50,7 +60,6 @@ rewritten.
   equivalents, plus Excel's bare `TRUE`/`FALSE`). Functions whose argument
   list also changed between the two apps aren't touched, since guessing at
   an argument reorder is worse than leaving the formula alone.
-- Range references that span sheets (`Sheet1:Sheet3!A1`) aren't converted.
 
 See the roadmap in the repo for what's planned next.
 
