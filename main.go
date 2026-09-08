@@ -11,8 +11,9 @@ import (
 func main() {
 	fromFlag := flag.String("from", "excel", "source formula dialect: excel or calc")
 	toFlag := flag.String("to", "calc", "target formula dialect: excel or calc")
+	outFlag := flag.String("o", "", "write output to this file instead of stdout")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: %s [-from excel|calc] [-to excel|calc] [file]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "usage: %s [-from excel|calc] [-to excel|calc] [-o file] [file]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Converts spreadsheet formulas between Excel and LibreOffice Calc syntax.\n")
 		fmt.Fprintf(os.Stderr, "Reads one formula per line from the given file, or from stdin if no\n")
 		fmt.Fprintf(os.Stderr, "file is given. Lines that don't start with '=' are passed through\n")
@@ -43,7 +44,18 @@ func main() {
 		in = f
 	}
 
-	if err := run(in, os.Stdout, from, to); err != nil {
+	var out io.Writer = os.Stdout
+	if *outFlag != "" {
+		f, err := os.Create(*outFlag)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "formula-bridge:", err)
+			os.Exit(1)
+		}
+		defer f.Close()
+		out = f
+	}
+
+	if err := run(in, out, from, to); err != nil {
 		fmt.Fprintln(os.Stderr, "formula-bridge:", err)
 		os.Exit(1)
 	}

@@ -53,6 +53,12 @@ Lines that don't start with `=` are passed through unchanged, so you can run
 a whole exported CSV column through the tool and only the formulas get
 rewritten.
 
+Use `-o` to write the result to a file instead of stdout:
+
+```
+$ formula-bridge -from excel -to calc -o formulas.calc.txt formulas.txt
+```
+
 ## What it doesn't handle yet
 
 - Function-name translation only covers a fixed table of same-signature
