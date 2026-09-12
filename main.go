@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"flag"
 	"fmt"
 	"io"
@@ -12,8 +13,9 @@ func main() {
 	fromFlag := flag.String("from", "excel", "source formula dialect: excel or calc")
 	toFlag := flag.String("to", "calc", "target formula dialect: excel or calc")
 	outFlag := flag.String("o", "", "write output to this file instead of stdout")
+	inPlaceFlag := flag.Bool("in-place", false, "overwrite the input file with the converted output")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: %s [-from excel|calc] [-to excel|calc] [-o file] [file]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "usage: %s [-from excel|calc] [-to excel|calc] [-o file] [-in-place] [file]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Converts spreadsheet formulas between Excel and LibreOffice Calc syntax.\n")
 		fmt.Fprintf(os.Stderr, "Reads one formula per line from the given file, or from stdin if no\n")
 		fmt.Fprintf(os.Stderr, "file is given. Lines that don't start with '=' are passed through\n")
@@ -33,8 +35,25 @@ func main() {
 		os.Exit(1)
 	}
 
+	args := flag.Args()
+	if *inPlaceFlag {
+		if len(args) == 0 {
+			fmt.Fprintln(os.Stderr, "formula-bridge: -in-place requires a file argument, not stdin")
+			os.Exit(1)
+		}
+		if *outFlag != "" {
+			fmt.Fprintln(os.Stderr, "formula-bridge: -in-place and -o cannot be used together")
+			os.Exit(1)
+		}
+		if err := convertInPlace(args[0], from, to); err != nil {
+			fmt.Fprintln(os.Stderr, "formula-bridge:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	var in io.Reader = os.Stdin
-	if args := flag.Args(); len(args) > 0 {
+	if len(args) > 0 {
 		f, err := os.Open(args[0])
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "formula-bridge:", err)
@@ -80,4 +99,26 @@ func run(r io.Reader, w io.Writer, from, to Dialect) error {
 		fmt.Fprintln(w, converted)
 	}
 	return scanner.Err()
+}
+
+// convertInPlace converts the formulas in the file at path and overwrites it
+// with the result. The output is built in memory before anything is written
+// back, so a conversion error (an unbalanced quote, say) leaves the original
+// file untouched instead of half-rewritten.
+func convertInPlace(path string, from, to Dialect) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	var buf bytes.Buffer
+	err = run(f, &buf, from, to)
+	f.Close()
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, buf.Bytes(), info.Mode())
 }
