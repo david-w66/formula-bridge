@@ -15,10 +15,10 @@ func main() {
 	outFlag := flag.String("o", "", "write output to this file instead of stdout")
 	inPlaceFlag := flag.Bool("in-place", false, "overwrite the input file with the converted output")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: %s [-from excel|calc] [-to excel|calc] [-o file] [-in-place] [file]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "usage: %s [-from excel|calc] [-to excel|calc] [-o file] [-in-place] [file...]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Converts spreadsheet formulas between Excel and LibreOffice Calc syntax.\n")
-		fmt.Fprintf(os.Stderr, "Reads one formula per line from the given file, or from stdin if no\n")
-		fmt.Fprintf(os.Stderr, "file is given. Lines that don't start with '=' are passed through\n")
+		fmt.Fprintf(os.Stderr, "Reads one formula per line from the given files, in order, or from stdin\n")
+		fmt.Fprintf(os.Stderr, "if none are given. Lines that don't start with '=' are passed through\n")
 		fmt.Fprintf(os.Stderr, "unchanged.\n\n")
 		flag.PrintDefaults()
 	}
@@ -38,29 +38,20 @@ func main() {
 	args := flag.Args()
 	if *inPlaceFlag {
 		if len(args) == 0 {
-			fmt.Fprintln(os.Stderr, "formula-bridge: -in-place requires a file argument, not stdin")
+			fmt.Fprintln(os.Stderr, "formula-bridge: -in-place requires at least one file argument, not stdin")
 			os.Exit(1)
 		}
 		if *outFlag != "" {
 			fmt.Fprintln(os.Stderr, "formula-bridge: -in-place and -o cannot be used together")
 			os.Exit(1)
 		}
-		if err := convertInPlace(args[0], from, to); err != nil {
-			fmt.Fprintln(os.Stderr, "formula-bridge:", err)
-			os.Exit(1)
+		for _, path := range args {
+			if err := convertInPlace(path, from, to); err != nil {
+				fmt.Fprintln(os.Stderr, "formula-bridge:", err)
+				os.Exit(1)
+			}
 		}
 		return
-	}
-
-	var in io.Reader = os.Stdin
-	if len(args) > 0 {
-		f, err := os.Open(args[0])
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "formula-bridge:", err)
-			os.Exit(1)
-		}
-		defer f.Close()
-		in = f
 	}
 
 	var out io.Writer = os.Stdout
@@ -74,10 +65,33 @@ func main() {
 		out = f
 	}
 
-	if err := run(in, out, from, to); err != nil {
-		fmt.Fprintln(os.Stderr, "formula-bridge:", err)
-		os.Exit(1)
+	if len(args) == 0 {
+		if err := run(os.Stdin, out, from, to); err != nil {
+			fmt.Fprintln(os.Stderr, "formula-bridge:", err)
+			os.Exit(1)
+		}
+		return
 	}
+
+	for _, path := range args {
+		if err := runFile(path, out, from, to); err != nil {
+			fmt.Fprintln(os.Stderr, "formula-bridge:", err)
+			os.Exit(1)
+		}
+	}
+}
+
+// runFile opens the file at path and runs its formulas through run, writing
+// the result to w. Kept separate from run so each file's handle is closed as
+// soon as it's done rather than piling up defers across an arbitrary number
+// of input files.
+func runFile(path string, w io.Writer, from, to Dialect) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return run(f, w, from, to)
 }
 
 // run streams formulas from r to w, converting each line that looks like a

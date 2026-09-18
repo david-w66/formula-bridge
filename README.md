@@ -59,6 +59,20 @@ Use `-o` to write the result to a file instead of stdout:
 $ formula-bridge -from excel -to calc -o formulas.calc.txt formulas.txt
 ```
 
+Give more than one file and they're converted in order, one after another,
+into the same output:
+
+```
+$ formula-bridge -from excel -to calc -o formulas.calc.txt sheet1.txt sheet2.txt
+```
+
+`-in-place` also accepts multiple files, overwriting each one with its own
+converted contents:
+
+```
+$ formula-bridge -from excel -to calc -in-place sheet1.txt sheet2.txt
+```
+
 ## What it doesn't handle yet
 
 - Function-name translation only covers a fixed table of same-signature
