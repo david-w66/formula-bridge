@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"errors"
+	"flag"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,6 +39,89 @@ func TestParseDialect(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("ParseDialect(%q) = %q, want %q", tt.in, got, tt.want)
 		}
+	}
+}
+
+func TestParseOptions(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+		check   func(t *testing.T, o *options)
+	}{
+		{
+			name: "defaults",
+			args: nil,
+			check: func(t *testing.T, o *options) {
+				if o.from != Excel || o.to != Calc || o.inPlace || o.outPath != "" || len(o.files) != 0 {
+					t.Errorf("unexpected defaults: %+v", o)
+				}
+			},
+		},
+		{
+			name: "direction and files",
+			args: []string{"-from", "calc", "-to", "excel", "a.txt", "b.txt"},
+			check: func(t *testing.T, o *options) {
+				if o.from != Calc || o.to != Excel {
+					t.Errorf("dialects = %q -> %q", o.from, o.to)
+				}
+				if len(o.files) != 2 || o.files[0] != "a.txt" || o.files[1] != "b.txt" {
+					t.Errorf("files = %v", o.files)
+				}
+			},
+		},
+		{
+			name: "output file",
+			args: []string{"-o", "out.txt", "in.txt"},
+			check: func(t *testing.T, o *options) {
+				if o.outPath != "out.txt" {
+					t.Errorf("outPath = %q", o.outPath)
+				}
+			},
+		},
+		{
+			name: "in-place with files",
+			args: []string{"-in-place", "in.txt"},
+			check: func(t *testing.T, o *options) {
+				if !o.inPlace {
+					t.Error("inPlace not set")
+				}
+			},
+		},
+		{name: "in-place with no files", args: []string{"-in-place"}, wantErr: "requires at least one file"},
+		{name: "in-place with -o", args: []string{"-in-place", "-o", "out.txt", "in.txt"}, wantErr: "cannot be used together"},
+		{name: "bad from dialect", args: []string{"-from", "lotus123"}, wantErr: "lotus123"},
+		{name: "unknown flag", args: []string{"-bogus"}, wantErr: "bogus"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stderr bytes.Buffer
+			o, err := parseOptions(tt.args, &stderr)
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("parseOptions(%v) returned nil error, want one containing %q", tt.args, tt.wantErr)
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("error = %q, want it to contain %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseOptions(%v) returned error: %v", tt.args, err)
+			}
+			tt.check(t, o)
+		})
+	}
+}
+
+func TestParseOptionsHelp(t *testing.T) {
+	var stderr bytes.Buffer
+	_, err := parseOptions([]string{"-h"}, &stderr)
+	if !errors.Is(err, flag.ErrHelp) {
+		t.Fatalf("err = %v, want flag.ErrHelp", err)
+	}
+	if !strings.Contains(stderr.String(), "usage: formula-bridge") {
+		t.Errorf("usage text not written to stderr: %q", stderr.String())
 	}
 }
 
